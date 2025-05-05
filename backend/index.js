@@ -36,7 +36,7 @@ app.use('/images',express.static('upload/images'))
 app.post("/upload",upload.single('product'),(req,res)=>{
     res.json({
         success: 1,
-        image_url: `<span class="math-inline">\{req\.protocol\}\://</span>{req.get('host')}/images/${req.file.filename}`
+        image_url: `https://digital-frontend-2vr5.onrender.com/images/${req.file.filename}`
     });
 });
 
