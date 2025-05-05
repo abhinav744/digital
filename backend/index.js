@@ -36,7 +36,7 @@ app.use('/images',express.static('upload/images'))
 app.post("/upload",upload.single('product'),(req,res)=>{
     res.json({
         success:1,
-        image_url:`https://digital-frontend-2vr5.onrender.com`
+        image_url: `https://digital-backend-xyz.onrender.com/images/${req.file.filename}`
     })
 })
 
