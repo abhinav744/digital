@@ -1,57 +1,43 @@
-const port = process.env.PORT || 4000;
-const express = require("express");
-const app = express();
-const mongoose = require("mongoose");
-const jwt = require("jsonwebtoken");
-const multer = require("multer");
-const cors = require("cors");
-const { v2: cloudinary } = require("cloudinary");
-const { CloudinaryStorage } = require("multer-storage-cloudinary");
-require("dotenv").config(); // <-- Add this line
-
-console.log("Cloudinary ENV:", {
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY ? "Loaded ✅" : "Missing ❌",
-  api_secret: process.env.CLOUDINARY_API_SECRET ? "Loaded ✅" : "Missing ❌",
-});
+const port= process.env.PORT || 10000;
+const express= require("express");
+const app= express();
+const mongoose= require("mongoose");
+const jwt= require("jsonwebtoken");
+const multer= require("multer")
+const path= require("path")
+const cors= require("cors");
+const { log } = require("console");
 
 app.use(express.json());
 app.use(cors());
 
-// ----------------- Database connection -----------------
-mongoose.connect(
-  "mongodb+srv://abhinavchauhan744:7250237622@cluster0.u66grl9.mongodb.net/e-commerce"
-);
+//Database connection with MongoDB
+mongoose.connect("mongodb+srv://abhinavchauhan744:7250237622@cluster0.u66grl9.mongodb.net/e-commerce");
 
-// ----------------- Cloudinary Config -----------------
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+//API creation
+app.get("/",(req,res)=>{
+    res.send("Express app is running")
+})
 
-// ----------------- Multer Storage (Cloudinary) -----------------
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: "ecommerce_uploads", // Cloudinary folder name
-    allowed_formats: ["jpg", "png", "jpeg", "webp"],
-  },
-});
+//Image storage engine
+const storage=multer.diskStorage({
+    destination: './upload/images',
+    filename:(req,file,cb)=>{
+        return cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`)
+    }
+})
 
-const upload = multer({ storage: storage });
+const upload=multer({storage:storage})
 
-// ----------------- API creation -----------------
-app.get("/", (req, res) => {
-  res.send("Express app is running with Cloudinary 🚀");
-});
+//Creating upload endpoint for images
 
-// ----------------- Image Upload Endpoint -----------------
-app.post("/upload", upload.single("product"), (req, res) => {
-  res.json({
-    success: 1,
-    image_url: req.file.path, // Cloudinary gives public URL automatically
-  });
+app.use('/images',express.static('upload/images'))
+
+app.post("/upload",upload.single('product'),(req,res)=>{
+    res.json({
+        success: 1,
+        image_url: `https://digital-frontend-2vr5.onrender.com/images/${req.file.filename}`
+    });
 });
 
 // ----------------- Product Schema -----------------
@@ -159,34 +145,31 @@ const Users = mongoose.model("Users", {
   },
 });
 
-// ----------------- Signup -----------------
-app.post("/signup", async (req, res) => {
-  let check = await Users.findOne({ email: req.body.email });
-  if (check) {
-    return res.status(400).json({
-      success: false,
-      error: "existing user found with same email address",
-    });
-  }
-  let cart = {};
-  for (let i = 0; i < 300; i++) {
-    cart[i] = 0;
-  }
-  const user = new Users({
-    name: req.body.username,
-    email: req.body.email,
-    password: req.body.password,
-    cartData: cart,
-  });
-  await user.save();
-  const data = {
-    user: {
-      id: user.id,
-    },
-  };
-  const token = jwt.sign(data, "secret_ecom");
-  res.json({ success: true, token });
-});
+//Creating endpoint for registering the user 
+app.post('/signup',async(req,res)=>{
+    let check=await Users.findOne({email:req.body.email});
+    if(check){
+        return res.status(400).json({success:false,error:"existing user found with same email address"})
+    }
+    let cart={};
+    for (let i = 0; i < 300; i++) {
+        cart[i]=0;
+    }
+    const user=new Users({
+        name:req.body.username,
+        email:req.body.email,
+        password:req.body.password,
+        cartData:cart,
+    })
+    await user.save();
+    const data={
+        user:{
+            id:user.id
+        }
+    }
+    const token=jwt.sign(data,'secret_ecom');
+    res.json({success:true,token})
+}) 
 
 // ----------------- Login -----------------
 app.post("/login", async (req, res) => {
@@ -225,59 +208,53 @@ app.get("/popularinwomen", async (req, res) => {
   res.send(popular_in_women);
 });
 
-// ----------------- Middleware (Auth) -----------------
-const fetchUser = async (req, res, next) => {
-  const token = req.header("auth-token");
-  if (!token) {
-    res.status(401).send({ error: "Please authenticate using valid token" });
-  } else {
-    try {
-      const data = jwt.verify(token, "secret_ecom");
-      req.user = data.user;
-      next();
-    } catch (error) {
-      res
-        .status(401)
-        .send({ error: "please authenticate using a valid token" });
+//Creating middleware to fetch user
+const fetchUser=async(req,res,next)=>{
+    const token=req.header('auth-token');
+    if(!token){
+        res.status(401).send({error:"Please authenticate using valid token"})
     }
-  }
-};
+    else{
+        try {
+            const data=jwt.verify(token,'secret_ecom');
+            req.user=data.user;
+            next();
+        } catch (error) {
+            res.status(401).send({error:"please authenticate using a valid token"})
+        }
+    }
+}
 
-// ----------------- Cart APIs -----------------
-app.post("/addtocart", fetchUser, async (req, res) => {
-  console.log("added", req.body.itemId);
-  let userData = await Users.findOne({ _id: req.user.id });
-  userData.cartData[req.body.itemId] += 1;
-  await Users.findOneAndUpdate(
-    { _id: req.user.id },
-    { cartData: userData.cartData }
-  );
-  res.send("Added");
-});
+//Creating endpoint for adding products in cartdata
+app.post('/addtocart',fetchUser,async(req,res)=>{
+    console.log("added",req.body.itemId);
+    let userData=await Users.findOne({_id:req.user.id});
+    userData.cartData[req.body.itemId]+=1;
+    await Users.findOneAndUpdate({_id:req.user.id},{cartData:userData.cartData});
+    res.send("Added")
+})
 
-app.post("/removefromcart", fetchUser, async (req, res) => {
-  console.log("removed", req.body.itemId);
-  let userData = await Users.findOne({ _id: req.user.id });
-  if (userData.cartData[req.body.itemId] > 0)
-    userData.cartData[req.body.itemId] -= 1;
-  await Users.findOneAndUpdate(
-    { _id: req.user.id },
-    { cartData: userData.cartData }
-  );
-  res.send("Removed");
-});
+//Creating endpoint to remove from cart data
+app.post('/removefromcart',fetchUser,async(req,res)=>{
+    console.log("removed",req.body.itemId);
+    let userData=await Users.findOne({_id:req.user.id});
+    if(userData.cartData[req.body.itemId]>0)
+    userData.cartData[req.body.itemId]-=1;
+    await Users.findOneAndUpdate({_id:req.user.id},{cartData:userData.cartData});
+    res.send("Removed")
+})
 
-app.post("/getcart", fetchUser, async (req, res) => {
-  console.log("GetCart");
-  let userData = await Users.findOne({ _id: req.user.id });
-  res.json(userData.cartData);
-});
+//Creating endpoint to get  cartdata
+app.post('/getcart',fetchUser,async(req,res)=>{
+    console.log("GetCart");
+    let userData=await Users.findOne({_id:req.user.id});
+    res.json(userData.cartData);
+})
 
-// ----------------- Start Server -----------------
-app.listen(port, (error) => {
-  if (!error) {
-    console.log("✅ Server running on port: " + port);
-  } else {
-    console.log("❌ Error: " + error);
-  }
-});
+app.listen(port,(error)=>{
+    if(!error){
+        console.log("Server ruuning on port: "+port)
+    }else{
+        console.log("Error: "+error)
+    }
+})
